@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="График 2/2">
+<meta name="theme-color" content="#1e3a5f">
+<title>График 2/2</title>
+<style>
+  :root{
+    --bg:#0f172a; --card:#1e293b; --work:#22c55e; --off:#64748b;
+    --text:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --btn:#2563eb;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{
+    margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--bg);color:var(--text);
+    padding:env(safe-area-inset-top) 12px calc(env(safe-area-inset-bottom) + 12px);
+  }
+  header{text-align:center;padding:16px 0 8px}
+  h1{font-size:20px;margin:0 0 4px}
+  .sub{font-size:13px;color:var(--muted)}
+  .card{
+    background:var(--card);border-radius:16px;padding:16px;margin:12px 0;
+    text-align:center;border:1px solid #334155;
+  }
+  .card .label{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .card .status{font-size:28px;font-weight:700;margin:6px 0}
+  .card .date{font-size:14px;color:var(--muted)}
+  .work{color:var(--work)} .off{color:var(--off)}
+  .tomorrow .status{font-size:22px}
+  button{
+    width:100%;padding:14px;margin:8px 0;border:none;border-radius:12px;
+    font-size:15px;font-weight:600;color:#fff;background:var(--btn);
+    cursor:pointer;font-family:inherit;
+  }
+  button.alt{background:#334155}
+  button:active{opacity:.8}
+  .month{
+    background:var(--card);border-radius:14px;padding:12px;margin:10px 0;
+    border:1px solid #334155;
+  }
+  .month h2{font-size:15px;margin:0 0 10px;color:var(--accent);text-transform:capitalize}
+  .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .dow{font-size:10px;text-align:center;color:var(--muted);padding-bottom:4px}
+  .day{
+    aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    border-radius:8px;font-size:13px;font-weight:600;background:#0b1220;color:#475569;
+  }
+  .day.w{background:rgba(34,197,94,.18);color:var(--work);border:1px solid rgba(34,197,94,.4)}
+  .day.o{background:rgba(100,116,139,.12);color:var(--off)}
+  .day.empty{background:transparent}
+  .day.today{outline:2px solid var(--accent);outline-offset:-2px}
+  .day .n{font-size:9px;font-weight:400;color:inherit;opacity:.7}
+  footer{text-align:center;font-size:11px;color:var(--muted);padding:10px 0}
+  @media(prefers-color-scheme:light){
+    :root{--bg:#f1f5f9;--card:#fff;--text:#0f172a;--muted:#64748b}
+    .day{background:#e2e8f0;color:#94a3b8}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>График 2/2</h1>
+  <div class="sub">старт 23.11.2026 · смена 08:00–20:00</div>
+</header>
+
+<div class="card">
+  <div class="label">Сегодня</div>
+  <div class="status" id="todayStatus">—</div>
+  <div class="date" id="todayDate">—</div>
+</div>
+
+<div class="card tomorrow">
+  <div class="label">Завтра</div>
+  <div class="status" id="tomorrowStatus">—</div>
+  <div class="date" id="tomorrowDate">—</div>
+</div>
+
+<button id="btnIcs">📅 Добавить смены в Календарь</button>
+<button id="btnRemind" class="alt">🔔 Напомнить о завтрашней смене</button>
+
+<div id="months"></div>
+
+<footer>2 рабочих / 2 выходных · напоминание за день · без праздников</footer>
+
+<script>
+(function(){
+  const START = new Date(2026, 10, 23); // 23.11.2026
+  const CYCLE = 4;
+  const END = new Date(2027, 10, 22);   // 22.11.2027
+  const SHIFT_START = [8, 0];  // 08:00
+  const SHIFT_END   = [20, 0]; // 20:00
+
+  const DOW = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+  const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь',
+                  'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+
+  function dayIndex(d){
+    return Math.floor((Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())
+                     - Date.UTC(START.getFullYear(),START.getMonth(),START.getDate())) / 86400000);
+  }
+  function isWork(d){
+    const i = dayIndex(d);
+    if(i < 0) return null;
+    return (i % CYCLE) < 2;
+  }
+  function fmt(d){
+    return d.toLocaleDateString('ru-RU',{day:'numeric',month:'long',year:'numeric'});
+  }
+  function pad(n){ return String(n).padStart(2,'0'); }
+  function icsDate(d, h, m){
+    return d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'T'+pad(h)+pad(m)+'00';
+  }
+
+  // ---- Сегодня / Завтра ----
+  const now = new Date();
+  const today = new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const tomorrow = new Date(today.getTime() + 86400000);
+
+  const st = isWork(today);
+  const ts = document.getElementById('todayStatus');
+  document.getElementById('todayDate').textContent = fmt(today);
+  if(st === null){ ts.textContent = 'до старта'; ts.className='status'; }
+  else { ts.textContent = st ? 'РАБОТА' : 'ВЫХОДНОЙ'; ts.className='status '+(st?'work':'off'); }
+
+  const sm = isWork(tomorrow);
+  const ms = document.getElementById('tomorrowStatus');
+  document.getElementById('tomorrowDate').textContent = fmt(tomorrow);
+  if(sm === null){ ms.textContent = 'до старта'; ms.className='status'; }
+  else { ms.textContent = sm ? 'РАБОТА' : 'ВЫХОДНОЙ'; ms.className='status '+(sm?'work':'off'); }
+
+  // ---- Генерация .ics ----
+  function buildICS(){
+    const lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Grafic 2-2//RU',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'X-WR-CALNAME:Смены 2/2',
+      'X-WR-TIMEZONE:Europe/Moscow'
+    ];
+    let d = new Date(START);
+    while(d <= END){
+      if(isWork(d)){
+        const dtStart = icsDate(d, SHIFT_START[0], SHIFT_START[1]);
+        const dtEnd   = icsDate(d, SHIFT_END[0], SHIFT_END[1]);
+        lines.push('BEGIN:VEVENT');
+        lines.push('UID:'+dtStart+'-shift@grafik22');
+        lines.push('DTSTAMP:'+icsDate(now, now.getHours(), now.getMinutes()));
+        lines.push('DTSTART;TZID=Europe/Moscow:'+dtStart);
+        lines.push('DTEND;TZID=Europe/Moscow:'+dtEnd);
+        lines.push('SUMMARY:Смена 08:00–20:00');
+        lines.push('DESCRIPTION:Рабочая смена по графику 2/2');
+        // напоминание за 1 день (24 часа = 1440 минут)
+        lines.push('BEGIN:VALARM');
+        lines.push('ACTION:DISPLAY');
+        lines.push('DESCRIPTION:Завтра смена 08:00–20:00');
+        lines.push('TRIGGER:-P1D');
+        lines.push('END:VALARM');
+        lines.push('END:VEVENT');
+      }
+      d = new Date(d.getTime() + 86400000);
+    }
+    lines.push('END:VCALENDAR');
+    return lines.join('\r\n');
+  }
+
+  document.getElementById('btnIcs').addEventListener('click', ()=>{
+    const ics = buildICS();
+    const blob = new Blob([ics], {type:'text/calendar;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'smeny-2-2.ics';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 2000);
+  });
+
+  // ---- Напомнить о завтрашней смене (одно событие на сегодня 20:00) ----
+  document.getElementById('btnRemind').addEventListener('click', ()=>{
+    const w = isWork(tomorrow);
+    if(w === null){ alert('График ещё не начался или уже закончился.'); return; }
+    if(!w){ alert('Завтра выходной — напоминание не нужно.'); return; }
+    const evStart = icsDate(today, 20, 0);
+    const evEnd   = icsDate(today, 20, 15);
+    const lines = [
+      'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Grafic 2-2//RU','CALSCALE:GREGORIAN','METHOD:PUBLISH',
+      'BEGIN:VEVENT',
+      'UID:remind-'+evStart+'@grafik22',
+      'DTSTAMP:'+icsDate(now, now.getHours(), now.getMinutes()),
+      'DTSTART;TZID=Europe/Moscow:'+evStart,
+      'DTEND;TZID=Europe/Moscow:'+evEnd,
+      'SUMMARY:Завтра смена 08:00–20:00',
+      'DESCRIPTION:Напоминание: завтра рабочая смена.',
+      'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:Завтра на работу','TRIGGER:PT0M','END:VALARM',
+      'END:VEVENT','END:VCALENDAR'
+    ];
+    const blob = new Blob([lines.join('\r\n')], {type:'text/calendar;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'napominanie.ics';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 2000);
+  });
+
+  // ---- Календарь по месяцам ----
+  const wrap = document.getElementById('months');
+  let cur = new Date(START.getFullYear(), START.getMonth(), 1);
+  const last = new Date(END.getFullYear(), END.getMonth(), 1);
+  while(cur <= last){
+    const y = cur.getFullYear(), m = cur.getMonth();
+    const card = document.createElement('div');
+    card.className = 'month';
+    const h2 = document.createElement('h2');
+    h2.textContent = MONTHS[m] + ' ' + y;
+    card.appendChild(h2);
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    DOW.forEach(d=>{ const el=document.createElement('div'); el.className='dow'; el.textContent=d; grid.appendChild(el); });
+    const firstDow = (new Date(y,m,1).getDay() + 6) % 7;
+    for(let i=0;i<firstDow;i++){ const e=document.createElement('div'); e.className='day empty'; grid.appendChild(e); }
+    const daysInMonth = new Date(y, m+1, 0).getDate();
+    for(let d=1; d<=daysInMonth; d++){
+      const date = new Date(y,m,d);
+      const cell = document.createElement('div');
+      cell.className = 'day';
+      const w = isWork(date);
+      if(w === null) cell.classList.add('empty');
+      else if(w) cell.classList.add('w');
+      else cell.classList.add('o');
+      const inRange = date >= START && date <= END;
+      if(!inRange) cell.style.opacity = .25;
+      const n = document.createElement('span');
+      n.className='n'; n.textContent=d; cell.appendChild(n);
+      if(date.getTime() === today.getTime()) cell.classList.add('today');
+      grid.appendChild(cell);
+    }
+    card.appendChild(grid);
+    wrap.appendChild(card);
+    cur = new Date(y, m+1, 1);
+  }
+})();
+</script>
+</body>
+</html>
